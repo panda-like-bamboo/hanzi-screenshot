@@ -10,7 +10,7 @@ import math
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton,
@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QMenu, QAction, QDialog, QFileDialog, QColorDialog,
     QSpinBox, QCheckBox, QComboBox, QGroupBox, QMessageBox,
     QListWidget, QListWidgetItem, QScrollArea, QFrame, QLineEdit,
-    QShortcut, QInputDialog, QSlider
+    QShortcut, QInputDialog, QSlider, QTextEdit, QProgressBar
 )
 from PyQt5.QtCore import (
     Qt, QPoint, QRect, QSize, QTimer, pyqtSignal, QSettings,
@@ -313,6 +313,198 @@ class DrawingTool:
     PEN = 'pen'
     TEXT = 'text'
     MOSAIC = 'mosaic'
+    SMART_MOSAIC = 'smart_mosaic'
+
+
+class SensitiveDataDetector:
+    PHONE = 'phone'
+    ID_CARD = 'id_card'
+    BANK_CARD = 'bank_card'
+    EMAIL = 'email'
+    IP_ADDRESS = 'ip_address'
+    
+    PATTERNS = {
+        'phone': r'1[3-9]\d{9}',
+        'id_card': r'\d{17}[\dXx]',
+        'bank_card': r'\d{16,19}',
+        'email': r'[\w.-]+@[\w.-]+\.\w+',
+        'ip_address': r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+    }
+    
+    LABELS = {
+        'phone': '手机号',
+        'id_card': '身份证',
+        'bank_card': '银行卡',
+        'email': '邮箱',
+        'ip_address': 'IP地址'
+    }
+    
+    @classmethod
+    def detect_all(cls, text: str) -> List[Dict]:
+        import re
+        results = []
+        for data_type, pattern in cls.PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                results.append({
+                    'type': data_type,
+                    'label': cls.LABELS.get(data_type, data_type),
+                    'value': match.group(),
+                    'start': match.start(),
+                    'end': match.end()
+                })
+        return results
+    
+    @classmethod
+    def detect_in_positions(cls, text: str, positions: List[Dict]) -> List[Dict]:
+        import re
+        results = []
+        for pos in positions:
+            text_region = text[pos['start']:pos['end']] if 'start' in pos and 'end' in pos else ''
+            for data_type, pattern in cls.PATTERNS.items():
+                if re.search(pattern, text_region):
+                    results.append({
+                        'type': data_type,
+                        'label': cls.LABELS.get(data_type, data_type),
+                        'value': text_region,
+                        'rect': pos.get('rect')
+                    })
+        return results
+
+
+class OCRManager:
+    _instance = None
+    _ocr_engine = None
+    _is_loading = False
+    _is_available = False
+    _model_path = None
+    
+    MODEL_DIR = Path.home() / '.screenshot_tool' / 'models' / 'ocr'
+    MODEL_URLS = {
+        'det': 'https://paddleocr.bj.bcebos.com/PP-OCRv3/chinese/ch_PP-OCRv3_det_infer.tar',
+        'rec': 'https://paddleocr.bj.bcebos.com/PP-OCRv3/chinese/ch_PP-OCRv3_rec_infer.tar',
+        'cls': 'https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar'
+    }
+    
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+    
+    @classmethod
+    def is_available(cls) -> bool:
+        return cls._is_available
+    
+    @classmethod
+    def is_loading(cls) -> bool:
+        return cls._is_loading
+    
+    @classmethod
+    def get_model_path(cls) -> Path:
+        return cls.MODEL_DIR
+    
+    @classmethod
+    def check_models_exist(cls) -> bool:
+        return cls.MODEL_DIR.exists() and any(cls.MODEL_DIR.iterdir()) if cls.MODEL_DIR.exists() else False
+    
+    @classmethod
+    def initialize(cls, callback=None) -> bool:
+        if cls._is_available:
+            return True
+        
+        if cls._is_loading:
+            return False
+        
+        cls._is_loading = True
+        
+        try:
+            from paddleocr import PaddleOCR
+            import warnings
+            warnings.filterwarnings('ignore')
+            
+            cls._ocr_engine = PaddleOCR(
+                use_angle_cls=True,
+                lang='ch',
+                use_gpu=False,
+                show_log=False,
+                det_model_dir=str(cls.MODEL_DIR / 'det'),
+                rec_model_dir=str(cls.MODEL_DIR / 'rec'),
+                cls_model_dir=str(cls.MODEL_DIR / 'cls')
+            )
+            cls._is_available = True
+            cls._is_loading = False
+            if callback:
+                callback(True)
+            return True
+        except ImportError:
+            cls._is_loading = False
+            if callback:
+                callback(False, 'PaddleOCR not installed. Run: pip install paddlepaddle paddleocr')
+            return False
+        except Exception as e:
+            cls._is_loading = False
+            if callback:
+                callback(False, str(e))
+            return False
+    
+    @classmethod
+    def recognize(cls, image) -> List[Dict]:
+        if not cls._is_available or cls._ocr_engine is None:
+            return []
+        
+        try:
+            import numpy as np
+            
+            if isinstance(image, QPixmap):
+                buffer = QBuffer()
+                buffer.open(QBuffer.ReadWrite)
+                image.save(buffer, 'PNG')
+                pil_image = Image.open(buffer)
+                img_array = np.array(pil_image)
+            elif isinstance(image, Image.Image):
+                img_array = np.array(image)
+            else:
+                return []
+            
+            if len(img_array.shape) == 2:
+                img_array = np.stack([img_array] * 3, axis=-1)
+            elif img_array.shape[2] == 4:
+                img_array = img_array[:, :, :3]
+            
+            result = cls._ocr_engine.ocr(img_array, cls=True)
+            
+            ocr_results = []
+            if result and result[0]:
+                for line in result[0]:
+                    if len(line) >= 2:
+                        box = line[0]
+                        text = line[1][0]
+                        confidence = line[1][1]
+                        
+                        x_coords = [p[0] for p in box]
+                        y_coords = [p[1] for p in box]
+                        
+                        ocr_results.append({
+                            'text': text,
+                            'confidence': confidence,
+                            'box': box,
+                            'rect': QRect(
+                                int(min(x_coords)),
+                                int(min(y_coords)),
+                                int(max(x_coords) - min(x_coords)),
+                                int(max(y_coords) - min(y_coords))
+                            )
+                        })
+            
+            return ocr_results
+        except Exception as e:
+            print(f'OCR error: {e}')
+            return []
+    
+    @classmethod
+    def get_all_text(cls, image) -> str:
+        results = cls.recognize(image)
+        return '\n'.join([r['text'] for r in results])
 
 
 class ScreenshotOverlay(QWidget):
@@ -696,9 +888,50 @@ class DrawingCanvas(QWidget):
         block_size = 10
         for x in range(rect.left(), rect.right(), block_size):
             for y in range(rect.top(), rect.bottom(), block_size):
-                colors =[QColor('#333'), QColor('#666'), QColor('#999'), QColor('#ccc')]
+                colors = [QColor('#333'), QColor('#666'), QColor('#999'), QColor('#ccc')]
                 color = random.choice(colors)
                 painter.fillRect(x, y, block_size, block_size, color)
+    
+    def draw_smart_mosaic(self, sensitive_areas: List[Dict]):
+        if not self.pixmap or not sensitive_areas:
+            return
+        
+        painter = QPainter(self.pixmap)
+        
+        for area in sensitive_areas:
+            rect = area.get('rect')
+            if rect:
+                self.draw_mosaic(painter, rect)
+        
+        self.save_state()
+        self.update()
+    
+    def apply_smart_mosaic_to_text(self, ocr_results: List[Dict], sensitive_types: List[str] = None):
+        if not self.pixmap or not ocr_results:
+            return []
+        
+        if sensitive_types is None:
+            sensitive_types = ['phone', 'id_card', 'bank_card', 'email', 'ip_address']
+        
+        sensitive_areas = []
+        
+        for result in ocr_results:
+            text = result.get('text', '')
+            detected = SensitiveDataDetector.detect_all(text)
+            
+            for item in detected:
+                if item['type'] in sensitive_types:
+                    sensitive_areas.append({
+                        'type': item['type'],
+                        'label': item['label'],
+                        'value': item['value'],
+                        'rect': result.get('rect')
+                    })
+        
+        if sensitive_areas:
+            self.draw_smart_mosaic(sensitive_areas)
+        
+        return sensitive_areas
     
     def draw_pen_stroke(self):
         if len(self.pen_points) < 2:
@@ -842,6 +1075,36 @@ class EditorWindow(QMainWindow):
             btn.clicked.connect(lambda checked, t=tool: self.select_tool(t))
             tools_row.addWidget(btn)
             self.tool_buttons.append((tool, btn))
+        
+        tools_row.addSpacing(10)
+        
+        self.btn_ocr = QPushButton('OCR', self.toolbar)
+        self.btn_ocr.setToolTip('Extract Text (OCR)')
+        self.btn_ocr.setStyleSheet('''
+            QPushButton {
+                background: #9c27b0;
+                color: white;
+            }
+            QPushButton:hover {
+                background: #7b1fa2;
+            }
+        ''')
+        self.btn_ocr.clicked.connect(self.do_ocr)
+        tools_row.addWidget(self.btn_ocr)
+        
+        self.btn_smart_mosaic = QPushButton('Smart Mosaic', self.toolbar)
+        self.btn_smart_mosaic.setToolTip('Auto-detect and mosaic sensitive data')
+        self.btn_smart_mosaic.setStyleSheet('''
+            QPushButton {
+                background: #ff5722;
+                color: white;
+            }
+            QPushButton:hover {
+                background: #e64a19;
+            }
+        ''')
+        self.btn_smart_mosaic.clicked.connect(self.do_smart_mosaic)
+        tools_row.addWidget(self.btn_smart_mosaic)
         
         self.select_tool(DrawingTool.RECT)
         tools_row.addStretch()
@@ -1030,9 +1293,171 @@ class EditorWindow(QMainWindow):
             print('Screenshot copied to clipboard')
             self.statusBar().showMessage('Copied to clipboard!', 2000)
     
+    def do_ocr(self):
+        if not OCRManager.is_available():
+            if not OCRManager.check_models_exist():
+                reply = QMessageBox.question(
+                    self, 'OCR Models Not Found',
+                    'OCR models need to be downloaded (~80MB).\n'
+                    'Would you like to download them now?\n\n'
+                    'Alternatively, you can run:\n'
+                    'pip install paddlepaddle paddleocr',
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+            
+            self.statusBar().showMessage('Loading OCR engine...')
+            self.btn_ocr.setEnabled(False)
+            
+            def on_ocr_loaded(success, error_msg=None):
+                self.btn_ocr.setEnabled(True)
+                if success:
+                    self.statusBar().showMessage('OCR engine loaded!', 2000)
+                    self._perform_ocr()
+                else:
+                    self.statusBar().showMessage(f'OCR load failed: {error_msg}', 5000)
+                    QMessageBox.warning(self, 'OCR Error', f'Failed to load OCR:\n{error_msg}')
+            
+            OCRManager.initialize(callback=on_ocr_loaded)
+        else:
+            self._perform_ocr()
+    
+    def _perform_ocr(self):
+        if not OCRManager.is_available():
+            return
+        
+        self.statusBar().showMessage('Performing OCR...')
+        QApplication.processEvents()
+        
+        ocr_results = OCRManager.recognize(self.canvas.pixmap)
+        
+        if ocr_results:
+            all_text = '\n'.join([r['text'] for r in ocr_results])
+            
+            dialog = OCRResultDialog(all_text, ocr_results, self)
+            if dialog.exec_() == QDialog.Accepted:
+                selected_text = dialog.get_selected_text()
+                if selected_text:
+                    QApplication.clipboard().setText(selected_text)
+                    self.statusBar().showMessage(f'Copied {len(selected_text)} characters!', 2000)
+        else:
+            self.statusBar().showMessage('No text detected', 2000)
+    
+    def do_smart_mosaic(self):
+        if not OCRManager.is_available():
+            reply = QMessageBox.question(
+                self, 'OCR Required',
+                'Smart Mosaic requires OCR to detect text.\n'
+                'Would you like to load OCR engine now?',
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+            
+            self.statusBar().showMessage('Loading OCR engine...')
+            self.btn_smart_mosaic.setEnabled(False)
+            
+            def on_ocr_loaded(success, error_msg=None):
+                self.btn_smart_mosaic.setEnabled(True)
+                if success:
+                    self.statusBar().showMessage('OCR engine loaded!', 2000)
+                    self._perform_smart_mosaic()
+                else:
+                    self.statusBar().showMessage(f'OCR load failed: {error_msg}', 5000)
+            
+            OCRManager.initialize(callback=on_ocr_loaded)
+        else:
+            self._perform_smart_mosaic()
+    
+    def _perform_smart_mosaic(self):
+        if not OCRManager.is_available():
+            return
+        
+        self.statusBar().showMessage('Detecting sensitive data...')
+        QApplication.processEvents()
+        
+        ocr_results = OCRManager.recognize(self.canvas.pixmap)
+        
+        if not ocr_results:
+            self.statusBar().showMessage('No text detected', 2000)
+            return
+        
+        sensitive_areas = self.canvas.apply_smart_mosaic_to_text(ocr_results)
+        
+        if sensitive_areas:
+            summary = '\n'.join([f"• {area['label']}: {area['value'][:3]}***" for area in sensitive_areas])
+            self.statusBar().showMessage(f'Mosaiced {len(sensitive_areas)} sensitive items', 3000)
+            QMessageBox.information(
+                self, 'Smart Mosaic Applied',
+                f'Applied mosaic to {len(sensitive_areas)} sensitive items:\n\n{summary}'
+            )
+        else:
+            self.statusBar().showMessage('No sensitive data detected', 2000)
+    
     def closeEvent(self, event):
         self.finished.emit()
         event.accept()
+
+
+class OCRResultDialog(QDialog):
+    def __init__(self, text: str, ocr_results: List[Dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('OCR Results')
+        self.setMinimumSize(500, 400)
+        self.ocr_results = ocr_results
+        self.selected_text = text
+        
+        self.init_ui(text)
+    
+    def init_ui(self, text: str):
+        layout = QVBoxLayout(self)
+        
+        label = QLabel('Detected Text (click to select):')
+        layout.addWidget(label)
+        
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlainText(text)
+        self.text_edit.setReadOnly(True)
+        self.text_edit.selectAll()
+        layout.addWidget(self.text_edit)
+        
+        info_label = QLabel(f'Detected {len(self.ocr_results)} text regions')
+        info_label.setStyleSheet('color: #666; font-size: 12px;')
+        layout.addWidget(info_label)
+        
+        btn_layout = QHBoxLayout()
+        
+        btn_copy_all = QPushButton('Copy All')
+        btn_copy_all.clicked.connect(self.copy_all)
+        btn_layout.addWidget(btn_copy_all)
+        
+        btn_copy_selected = QPushButton('Copy Selected')
+        btn_copy_selected.clicked.connect(self.copy_selected)
+        btn_layout.addWidget(btn_copy_selected)
+        
+        btn_layout.addStretch()
+        
+        btn_close = QPushButton('Close')
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_close)
+        
+        layout.addLayout(btn_layout)
+    
+    def copy_all(self):
+        QApplication.clipboard().setText(self.text_edit.toPlainText())
+        self.accept()
+    
+    def copy_selected(self):
+        cursor = self.text_edit.textCursor()
+        selected = cursor.selectedText()
+        if selected:
+            self.selected_text = selected
+        self.accept()
+    
+    def get_selected_text(self) -> str:
+        return self.selected_text
+
 
 # Custom QLineEdit that allows user to bind shortcuts
 class HotkeyLineEdit(QLineEdit):
