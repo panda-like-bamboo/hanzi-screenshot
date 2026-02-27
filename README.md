@@ -6,6 +6,22 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/panda-like-bamboo/hanzi-screenshot)
 
+## 📥 快速下载
+
+### Windows 用户（推荐）
+
+**直接下载可执行文件，无需安装 Python 环境：**
+
+👉 [下载 ScreenshotTool.exe](https://github.com/panda-like-bamboo/hanzi-screenshot/releases/latest)
+
+下载后双击运行即可使用！
+
+### 其他平台
+
+前往 [Releases](https://github.com/panda-like-bamboo/hanzi-screenshot/releases) 页面下载对应平台的版本。
+
+---
+
 ## ✨ 功能特性
 
 ### 🎯 核心功能
@@ -37,25 +53,7 @@
 - **开机自启**: 可选开机自动启动
 - **自定义设置**: 快捷键、颜色、线宽等
 
-## 📥 安装使用
-
-### 方式一：下载安装包（推荐）
-1. 前往 [Releases](https://github.com/panda-like-bamboo/hanzi-screenshot/releases) 页面
-2. 下载最新版本的安装包
-3. 运行安装向导，按提示完成安装
-
-### 方式二：从源码运行
-```bash
-# 克隆仓库
-git clone https://github.com/panda-like-bamboo/hanzi-screenshot.git
-cd hanzi-screenshot
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 运行程序
-python screenshot_tool.py
-```
+---
 
 ## 🎮 使用方法
 
@@ -70,7 +68,7 @@ python screenshot_tool.py
 | `Enter` | 复制到剪贴板 |
 
 ### 操作流程
-1. 按 `Ctrl+Shift+A` 启动截图
+1. 双击运行 `ScreenshotTool.exe`（或按 `Ctrl+Shift+A`）
 2. 鼠标拖拽选择截图区域
 3. 使用绘图工具进行标注
 4. 点击 **Save** 保存文件，或 **Copy** 复制到剪贴板
@@ -82,19 +80,40 @@ python screenshot_tool.py
 - ⚙️ 设置
 - 🚪 退出
 
-## 🔧 构建安装包
+---
+
+## 🔧 从源码构建
+
+### 环境要求
+- Python 3.8+
+- PyQt5
+- Pillow
+
+### 运行源码
+```bash
+# 克隆仓库
+git clone https://github.com/panda-like-bamboo/hanzi-screenshot.git
+cd hanzi-screenshot
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行程序
+python screenshot_tool.py
+```
 
 ### 打包可执行文件
 ```bash
+# 安装打包工具
 pip install pyinstaller
+
+# 打包
 pyinstaller --clean --noconfirm screenshot_tool.spec
+
+# 生成的文件在 dist/ 目录
 ```
 
-### 生成安装程序
-需要安装 [Inno Setup](https://jrsoftware.org/isinfo.php)：
-```
-打开 installer.iss → Build → Compile
-```
+---
 
 ## 📁 项目结构
 
@@ -102,16 +121,15 @@ pyinstaller --clean --noconfirm screenshot_tool.spec
 hanzi-screenshot/
 ├── screenshot_tool.py    # 主程序
 ├── screenshot_tool.spec  # PyInstaller配置
-├── installer.iss         # 安装程序脚本
+├── installer.iss         # Inno Setup安装程序脚本
 ├── requirements.txt      # Python依赖
 ├── app-icon.ico          # 应用图标
 ├── tray-icon.png         # 托盘图标
-├── create_app_icon.py    # 图标生成脚本
-├── install.bat           # Windows安装脚本
-├── start.bat             # Windows启动脚本
 ├── LICENSE.txt           # 许可证
 └── README.md             # 项目说明
 ```
+
+---
 
 ## 🛠️ 技术栈
 
@@ -121,6 +139,8 @@ hanzi-screenshot/
 - **安装程序**: Inno Setup
 - **快捷键**: Windows Native API
 
+---
+
 ## 🌍 跨平台支持
 
 | 平台 | 自启动方式 |
@@ -128,6 +148,8 @@ hanzi-screenshot/
 | Windows | 注册表 Run 键 |
 | macOS | LaunchAgent plist |
 | Linux | XDG autostart |
+
+---
 
 ## 📝 更新日志
 
@@ -138,11 +160,15 @@ hanzi-screenshot/
 - ✅ 撤销/重做功能
 - ✅ 系统托盘集成
 - ✅ 开机自启功能
-- ✅ Windows 安装程序
+- ✅ Windows 可执行文件发布
+
+---
 
 ## 📄 许可证
 
 [MIT License](LICENSE.txt)
+
+---
 
 ## 🤝 贡献
 
