@@ -377,13 +377,9 @@ class OCRManager:
     _is_loading = False
     _is_available = False
     _model_path = None
+    _download_progress = 0
     
     MODEL_DIR = Path.home() / '.screenshot_tool' / 'models' / 'ocr'
-    MODEL_URLS = {
-        'det': 'https://paddleocr.bj.bcebos.com/PP-OCRv3/chinese/ch_PP-OCRv3_det_infer.tar',
-        'rec': 'https://paddleocr.bj.bcebos.com/PP-OCRv3/chinese/ch_PP-OCRv3_rec_infer.tar',
-        'cls': 'https://paddleocr.bj.bcebos.com/dygraph_v2.0/ch/ch_ppocr_mobile_v2.0_cls_infer.tar'
-    }
     
     @classmethod
     def get_instance(cls):
@@ -422,14 +418,14 @@ class OCRManager:
             import warnings
             warnings.filterwarnings('ignore')
             
+            cls.MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            
             cls._ocr_engine = PaddleOCR(
                 use_angle_cls=True,
                 lang='ch',
                 use_gpu=False,
                 show_log=False,
-                det_model_dir=str(cls.MODEL_DIR / 'det'),
-                rec_model_dir=str(cls.MODEL_DIR / 'rec'),
-                cls_model_dir=str(cls.MODEL_DIR / 'cls')
+                model_dir=str(cls.MODEL_DIR)
             )
             cls._is_available = True
             cls._is_loading = False
